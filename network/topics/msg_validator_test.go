@@ -27,7 +27,7 @@ func TestMsgValidator(t *testing.T) {
 	logger := logex.TestLogger(t)
 	f := genesis.ForkGenesis{}
 	controller := mocks.NewMockController(ctrl)
-	mv := NewSSVMsgValidator(logger, &f, controller)
+	mv := NewSSVMsgValidator(*logger, &f, controller)
 	controller.EXPECT().GetShare(gomock.Any()).Return(&types.SSVShare{}, nil)
 	require.NotNil(t, mv)
 
