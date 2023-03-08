@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"fmt"
+	"github.com/bloxapp/ssv/operator/validator"
 	"strings"
 	"time"
 
@@ -78,7 +79,8 @@ type Config struct {
 	// If false, SyncDecidedByRange becomes a no-op.
 	FullNode bool
 
-	GetValidatorStats network.GetValidatorStats
+	GetValidatorStats    network.GetValidatorStats
+	ValidatorsController validator.Controller
 }
 
 // Libp2pOptions creates options list for the libp2p host

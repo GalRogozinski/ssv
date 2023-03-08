@@ -4,13 +4,15 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"github.com/bloxapp/ssv/operator/validator/mocks"
+	"github.com/bloxapp/ssv/protocol/v2/types"
+	"github.com/golang/mock/gomock"
 	"testing"
 
 	spectypes "github.com/bloxapp/ssv-spec/types"
 	"github.com/herumi/bls-eth-go-binary/bls"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	ps_pb "github.com/libp2p/go-libp2p-pubsub/pb"
-	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
 
 	"github.com/bloxapp/ssv/network/forks/genesis"
@@ -19,11 +21,14 @@ import (
 )
 
 func TestMsgValidator(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
 	pks := createSharePublicKeys(4)
 	logger := logex.TestLogger(t)
 	f := genesis.ForkGenesis{}
-	self := peer.ID("16Uiu2HAmNNPRh9pV2MXASMB7oAGCqdmFrYyp5tzutFiF2LN1xFCE")
-	mv := NewSSVMsgValidator(logger, &f, self)
+	controller := mocks.NewMockController(ctrl)
+	mv := NewSSVMsgValidator(logger, &f, controller)
+	controller.EXPECT().GetShare(gomock.Any()).Return(&types.SSVShare{}, nil)
 	require.NotNil(t, mv)
 
 	t.Run("valid consensus msg", func(t *testing.T) {
@@ -37,7 +42,7 @@ func TestMsgValidator(t *testing.T) {
 		topics := f.ValidatorTopicID(pk)
 		pmsg := newPBMsg(raw, f.GetTopicFullName(topics[0]), []byte("16Uiu2HAkyWQyCb6reWXGQeBUt9EXArk6h3aq3PsFMwLNq3pPGH1r"))
 		res := mv(context.Background(), "16Uiu2HAkyWQyCb6reWXGQeBUt9EXArk6h3aq3PsFMwLNq3pPGH1r", pmsg)
-		require.Equal(t, res, pubsub.ValidationAccept)
+		require.Equal(t, res, pubsub.ValidationReject)
 	})
 
 	// TODO: enable once topic validation is in place

@@ -5,6 +5,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.uber.org/zap"
 )
 
 var (
@@ -58,10 +59,21 @@ func init() {
 type msgValidationResult string
 
 var (
-	validationResultNoData   msgValidationResult = "no_data"
-	validationResultEncoding msgValidationResult = "encoding"
+	validationResultNoData         msgValidationResult = "no_data"
+	validationResultEncoding       msgValidationResult = "encoding"
+	validationResultNoValidator    msgValidationResult = "no_validator"
+	ValidationResultNotTimely      msgValidationResult = "not_timely"
+	ValidationResultSyntacticCheck msgValidationResult = "syntactic_check"
+	ValidationResultBetterMessage  msgValidationResult = "better_message"
+	ValidationResultInvalidSig     msgValidationResult = "invalid signature"
+	validationResultOk             msgValidationResult = "valid"
 )
 
-func reportValidationResult(result msgValidationResult) {
+func reportValidationResult(result msgValidationResult, logger *zap.Logger, err error, msg string) {
+	if err != nil {
+		logger.Error(string(result), zap.String("msg", msg), zap.Error(err))
+	} else {
+		logger.Info(string(result), zap.String("msg", msg))
+	}
 	metricPubsubMsgValidationResults.WithLabelValues(string(result)).Inc()
 }

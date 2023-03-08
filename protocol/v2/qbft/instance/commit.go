@@ -138,12 +138,27 @@ func CreateCommit(state *specqbft.State, config qbft.IConfig, value []byte) (*sp
 	return signedMsg, nil
 }
 
+// BaseCommitValidation does BaseCommitValNoSig check plus a signature check
 func BaseCommitValidation(
 	config qbft.IConfig,
 	signedCommit *specqbft.SignedMessage,
 	height specqbft.Height,
 	operators []*spectypes.Operator,
 ) error {
+	if err := BaseCommitValNoSig(signedCommit, height); err != nil {
+		return err
+	}
+
+	// verify signature
+	if err := signedCommit.Signature.VerifyByOperators(signedCommit, config.GetSignatureDomainType(), spectypes.QBFTSignatureType, operators); err != nil {
+		return errors.Wrap(err, "msg signature invalid")
+	}
+
+	return nil
+}
+
+// BaseCommitValNoSig does basic syntactical validation of a commit message. It Also checks that the commit message is at a specified height
+func BaseCommitValNoSig(signedCommit *specqbft.SignedMessage, height specqbft.Height) error {
 	if signedCommit.Message.MsgType != specqbft.CommitMsgType {
 		return errors.New("commit msg type is wrong")
 	}
@@ -158,12 +173,6 @@ func BaseCommitValidation(
 	if err := msgCommitData.Validate(); err != nil {
 		return errors.Wrap(err, "msgCommitData invalid")
 	}
-
-	// verify signature
-	if err := signedCommit.Signature.VerifyByOperators(signedCommit, config.GetSignatureDomainType(), spectypes.QBFTSignatureType, operators); err != nil {
-		return errors.Wrap(err, "msg signature invalid")
-	}
-
 	return nil
 }
 

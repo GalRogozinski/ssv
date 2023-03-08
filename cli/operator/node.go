@@ -155,6 +155,8 @@ var StartNodeCmd = &cobra.Command{
 			}
 		}
 
+		cfg.P2pNetworkConfig.ValidatorsController = validatorCtrl
+
 		cfg.P2pNetworkConfig.GetValidatorStats = func() (uint64, uint64, uint64, error) {
 			return validatorCtrl.GetValidatorStats(logger)
 		}
