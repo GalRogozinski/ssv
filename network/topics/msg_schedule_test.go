@@ -56,7 +56,7 @@ func TestMarkDecidedMessage(t *testing.T) {
 	s := NewMessageSchedule()
 	// mark decided message with several operator ids.
 	operatorIDs := []types.OperatorID{0, 1, 2}
-	s.markDecidedMessage(decidedMsgId, operatorIDs, 1, []types.OperatorID{0, 1, 2}, zap.L())
+	s.markDecidedMessage(decidedMsgId, operatorIDs, 1, 0, []types.OperatorID{0, 1, 2}, zap.L())
 	// test that scheduler has a mark for each operator id.
 	id := markID(decidedMsgId)
 	for _, operatorID := range operatorIDs {
@@ -77,7 +77,7 @@ func TestMarkDecidedMessage(t *testing.T) {
 	}
 
 	// test that decided count is updated
-	s.markDecidedMessage(decidedMsgId, operatorIDs, 1, []types.OperatorID{0, 1}, zap.L())
+	s.markDecidedMessage(decidedMsgId, operatorIDs, 1, 0, []types.OperatorID{0, 1}, zap.L())
 	for _, operatorID := range operatorIDs {
 		signerMark, _ := s.getMark(id, operatorID)
 		require.Equal(t, 2, signerMark.MarkedDecided, "MarkedDecided should be 2")
@@ -86,7 +86,7 @@ func TestMarkDecidedMessage(t *testing.T) {
 		require.True(t, time.Now().Sub(signerMark.Last2DecidedTimes[1]) < time.Second, "last2DecidedTime should be set to now")
 	}
 	// old height
-	s.markDecidedMessage(decidedMsgId, []types.OperatorID{0, 1}, 0, []types.OperatorID{0, 1, 2, 3, 4}, zap.L())
+	s.markDecidedMessage(decidedMsgId, []types.OperatorID{0, 1}, 0, 0, []types.OperatorID{0, 1, 2, 3, 4}, zap.L())
 	for _, operatorID := range operatorIDs {
 		signerMark, _ := s.getMark(id, operatorID)
 		require.Equal(t, qbft.Height(1), signerMark.HighestDecided, "HighestDecided should be 1")
@@ -94,7 +94,7 @@ func TestMarkDecidedMessage(t *testing.T) {
 		require.ElementsMatch(t, []types.OperatorID{0, 1, 2}, extractKeysFromMap(signerMark.signers), "numOfSignatures should be 3, since we don't update old height")
 	}
 	// new height
-	s.markDecidedMessage(decidedMsgId, operatorIDs, 2, []types.OperatorID{0, 1}, zap.L())
+	s.markDecidedMessage(decidedMsgId, operatorIDs, 2, 0, []types.OperatorID{0, 1}, zap.L())
 	for _, operatorID := range operatorIDs {
 		signerMark, _ := s.getMark(id, operatorID)
 		require.Equal(t, qbft.Height(2), signerMark.HighestDecided, "HighestDecided should be 2")
@@ -111,10 +111,10 @@ func TestIsTimelyDecidedMessage(t *testing.T) {
 	require.True(t, isTimely, "message should be timely because it has no mark")
 	// Test given a non-nil mark, the message is timely.
 	// Create a non-nil mark. With a higher round.
-	s.markDecidedMessage(decidedMsgId, []types.OperatorID{0, 1, 2, 3}, qbft.FirstHeight, []types.OperatorID{0, 1, 2}, zap.L())
+	s.markDecidedMessage(decidedMsgId, []types.OperatorID{0, 1, 2, 3}, qbft.FirstHeight, 0, []types.OperatorID{0, 1, 2}, zap.L())
 	isTimely = s.isTimelyDecidedMessage(decidedMsgId, []types.OperatorID{0, 1, 2}, qbft.FirstHeight, zap.L())
 	require.True(t, isTimely, "message should be timely because it is of last height")
-	s.markDecidedMessage(decidedMsgId, []types.OperatorID{0, 1, 2, 3}, qbft.Height(2), []types.OperatorID{0, 1, 2}, zap.L())
+	s.markDecidedMessage(decidedMsgId, []types.OperatorID{0, 1, 2, 3}, qbft.Height(2), 0, []types.OperatorID{0, 1, 2}, zap.L())
 	isTimely = s.isTimelyDecidedMessage(decidedMsgId, []types.OperatorID{1, 2, 3}, qbft.Height(3), zap.L())
 	require.False(t, isTimely, "message shouldn't be timely because not enough time has passed")
 	mark, found := s.findMark(decidedMsgId, 0)
@@ -145,7 +145,7 @@ func TestHasBetterMsg(t *testing.T) {
 	betterOrSimilarMsg, result := s.hasBetterOrSimilarMsg(signedMsg)
 	require.False(t, betterOrSimilarMsg)
 	require.Equal(t, pubsub.ValidationAccept, result)
-	s.markDecidedMessage(decidedMsgId, []types.OperatorID{1, 2, 3}, qbft.FirstHeight, []types.OperatorID{0, 1, 2}, zap.L())
+	s.markDecidedMessage(decidedMsgId, []types.OperatorID{1, 2, 3}, qbft.FirstHeight, 0, []types.OperatorID{0, 1, 2}, zap.L())
 	betterOrSimilarMsg, result = s.hasBetterOrSimilarMsg(signedMsg)
 	require.True(t, betterOrSimilarMsg)
 	require.Equal(t, pubsub.ValidationIgnore, result)
@@ -163,33 +163,33 @@ func TestIsConsensusMessageTimely(t *testing.T) {
 		signers:           map[types.OperatorID]struct{}{},
 	}
 	// test that message is not timely if it has height smaller than highestDecided.
-	isTimely, validationResult := signerMark.isConsensusMessageTimely(qbft.Height(1), qbft.Round(3), time.Time{}, zap.L())
+	isTimely, validationResult := signerMark.isConsensusMessageTimely(qbft.Height(1), qbft.Round(3), 0, nil, time.Time{}, zap.L())
 	require.False(t, isTimely, "message shouldn't be timely because it has height smaller than highestDecided")
 	require.Equal(t, pubsub.ValidationReject, validationResult, "validation result should be reject")
 
 	// test that message is not timely if it has height equal to highestDecided
-	isTimely, validationResult = signerMark.isConsensusMessageTimely(qbft.Height(2), qbft.Round(3), time.Time{}, zap.L())
+	isTimely, validationResult = signerMark.isConsensusMessageTimely(qbft.Height(2), qbft.Round(3), 0, nil, time.Time{}, zap.L())
 	require.False(t, isTimely, "message shouldn't be timely because it has height equal to highestDecided")
 	require.Equal(t, pubsub.ValidationIgnore, validationResult, "validation result should be ignore")
 
 	// test that message is not timely if it has height too much above highestDecided
-	isTimely, validationResult = signerMark.isConsensusMessageTimely(qbft.Height(4), qbft.Round(3), time.Time{}, zap.L())
+	isTimely, validationResult = signerMark.isConsensusMessageTimely(qbft.Height(4), qbft.Round(3), 0, nil, time.Time{}, zap.L())
 	require.False(t, isTimely, "message shouldn't be timely because it has height too much above highest decided highestDecided")
 	require.Equal(t, pubsub.ValidationReject, validationResult, "validation result should be reject")
 
 	// test that message is timely if it has round smaller than highestRound.
-	isTimely, validationResult = signerMark.isConsensusMessageTimely(qbft.Height(3), qbft.Round(1), time.Time{}, zap.L())
+	isTimely, validationResult = signerMark.isConsensusMessageTimely(qbft.Height(3), qbft.Round(1), 0, nil, time.Time{}, zap.L())
 	require.False(t, isTimely, "message shouldn't be timely because it has round smaller than highestime.Now()tDecided")
 	require.Equal(t, pubsub.ValidationReject, validationResult, "validation result should be reject")
 	// test that message is timely if it has round larger than highestRound
 	// first set firstMsgInRound to now.
-	isTimely, validationResult = signerMark.isConsensusMessageTimely(qbft.Height(3), qbft.Round(3), time.Now(), zap.L())
+	isTimely, validationResult = signerMark.isConsensusMessageTimely(qbft.Height(3), qbft.Round(3), 0, nil, time.Now(), zap.L())
 	// should fail because new round came too soon.
 	require.False(t, isTimely, "message shouldn't be timely because it came too soon")
 	require.Equal(t, pubsub.ValidationReject, validationResult, "validation result should be reject")
 	// change firstMsgInRound
 	signerMark.FirstMsgInRound.Set(qbft.Round(2), time.Now().Add(-roundtimer.RoundTimeout(3)).Add(-NetLatency))
-	isTimely, validationResult = signerMark.isConsensusMessageTimely(qbft.Height(3), qbft.Round(3), time.Now().Add(-roundtimer.RoundTimeout(3)).Add(-NetLatency), zap.L())
+	isTimely, validationResult = signerMark.isConsensusMessageTimely(qbft.Height(3), qbft.Round(3), 0, nil, time.Now().Add(-roundtimer.RoundTimeout(3)).Add(-NetLatency), zap.L())
 	// should pass because new round came after timeout.
 	require.True(t, isTimely, "message should be timely because it came after timeout")
 	require.Equal(t, pubsub.ValidationAccept, validationResult, "validation result should be accept")

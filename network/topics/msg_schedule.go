@@ -45,6 +45,7 @@ type mark struct {
 	MsgTypesInRound *hashmap.Map[qbft.Round, *hashmap.Map[qbft.MessageType, int]]
 
 	HighestDecided    qbft.Height
+	DecidedRound      qbft.Round
 	Last2DecidedTimes [2]time.Time
 	MarkedDecided     int
 	// the seen signers of the last decided message
@@ -97,7 +98,7 @@ func (mark *mark) ResetForNewRound(round qbft.Round, msgType qbft.MessageType) {
 	typesToOccurrences.Insert(msgType, 1)
 }
 
-func (mark *mark) updateDecidedMark(height qbft.Height, msgSignatures []types.OperatorID, plog *zap.Logger) {
+func (mark *mark) updateDecidedMark(height qbft.Height, round qbft.Round, msgSignatures []types.OperatorID, plog *zap.Logger) {
 	mark.rwLock.Lock()
 	defer mark.rwLock.Unlock()
 
@@ -112,6 +113,7 @@ func (mark *mark) updateDecidedMark(height qbft.Height, msgSignatures []types.Op
 	if mark.HighestDecided < height || height == qbft.FirstHeight && mark.MarkedDecided == 0 {
 		// reset for new height
 		mark.HighestDecided = height
+		mark.DecidedRound = round
 		// maybe clear map instead of creating a new one
 		mark.signers = make(map[types.OperatorID]struct{})
 		mark.MarkedDecided = 0
@@ -208,10 +210,10 @@ func (schedule *MessageSchedule) findMark(id []byte, signer types.OperatorID) (*
 }
 
 func (signerMark *mark) isConsensusMsgTimely(msg *qbft.SignedMessage, plog *zap.Logger, minRoundTime time.Time) (bool, pubsub.ValidationResult) {
-	return signerMark.isConsensusMessageTimely(msg.Message.Height, msg.Message.Round, minRoundTime, plog)
+	return signerMark.isConsensusMessageTimely(msg.Message.Height, msg.Message.Round, msg.Message.MsgType, msg.GetSigners(), minRoundTime, plog)
 }
 
-func (signerMark *mark) isConsensusMessageTimely(height qbft.Height, round qbft.Round, minRoundTime time.Time, plog *zap.Logger) (bool, pubsub.ValidationResult) {
+func (signerMark *mark) isConsensusMessageTimely(height qbft.Height, round qbft.Round, msgType qbft.MessageType, signers []types.OperatorID, minRoundTime time.Time, plog *zap.Logger) (bool, pubsub.ValidationResult) {
 	signerMark.rwLock.RLock()
 	defer signerMark.rwLock.RUnlock()
 	plog = plog.With(zap.Any("markedRound", signerMark.HighestRound), zap.Any("markedHeight", signerMark.HighestDecided)).
@@ -221,6 +223,15 @@ func (signerMark *mark) isConsensusMessageTimely(height qbft.Height, round qbft.
 		plog.Warn("past height", zap.Any("height", height))
 		return false, pubsub.ValidationReject
 	} else if signerMark.HighestDecided == height {
+		// if a commit message was received for a decided round, but we do not know about it, then we should process it
+		// TODO there's an attack vector, someone can try to create commits for a decided round and we will process them
+		// TODO check height == 0 case
+		if msgType == qbft.CommitMsgType && signerMark.DecidedRound == round && signerMark.signers[signers[0]] != struct{}{} {
+			plog.Warn("a commit message that should help create a better decided", zap.Any("height", height))
+			// assume a late message and don't penalize
+			// TODO maybe penalize every 2-3 messages?
+			return true, pubsub.ValidationAccept
+		}
 		// TODO: ugly hack for height == 0 case
 		// Problematic if another commit comes to make a better decided
 		if height != 0 || signerMark.MarkedDecided > 0 {
@@ -280,11 +291,12 @@ func (schedule *MessageSchedule) markDecidedMsg(signedMsg *qbft.SignedMessage, s
 		signers = append(signers, signer)
 	}
 	height := signedMsg.Message.Height
+	round := signedMsg.Message.Round
 
-	schedule.markDecidedMessage(id, signers, height, signedMsg.Signers, plog)
+	schedule.markDecidedMessage(id, signers, height, round, signedMsg.Signers, plog)
 }
 
-func (schedule *MessageSchedule) markDecidedMessage(id []byte, committeeMembers []types.OperatorID, height qbft.Height, signatures []types.OperatorID, plog *zap.Logger) {
+func (schedule *MessageSchedule) markDecidedMessage(id []byte, committeeMembers []types.OperatorID, height qbft.Height, round qbft.Round, signatures []types.OperatorID, plog *zap.Logger) {
 	for _, signer := range committeeMembers {
 		idStr := markID(id)
 		lockID := markLockID(id, signer)
@@ -297,7 +309,7 @@ func (schedule *MessageSchedule) markDecidedMessage(id []byte, committeeMembers 
 			schedule.setMark(idStr, signer, signerMark)
 		}
 
-		signerMark.updateDecidedMark(height, signatures, plog)
+		signerMark.updateDecidedMark(height, round, signatures, plog)
 		plog.Info("decided mark updated", zap.Any("mark signer", signer), zap.Any("decided mark", signerMark))
 	}
 }
