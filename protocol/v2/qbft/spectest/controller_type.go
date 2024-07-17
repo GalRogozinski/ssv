@@ -128,6 +128,8 @@ func testBroadcastedDecided(
 				continue
 			}
 
+			msg1 := &spectypes.SSVMessage{}
+			require.NoError(t, msg1.Decode(msg.SSVMessage.Data))
 			r1, err := msg.GetRoot()
 			require.NoError(t, err)
 
